@@ -217,6 +217,10 @@ export async function syncMasterList() {
       if (al.includes("cancelled member") || al.includes("canceled member")) { section = "Cancelled"; continue; }
       if (!name || al.startsWith("total")) continue;
 
+      const stripeLink = (r[1] ?? "").toString().trim();
+      // Extract Stripe customer ID from URLs like https://dashboard.stripe.com/customers/cus_KMUbcmBlviW9sN
+      const stripeIdMatch = stripeLink.match(/cus_[A-Za-z0-9]+/);
+      const stripeCustomerId = stripeIdMatch ? stripeIdMatch[0] : null;
       const spfAmount = (r[3] ?? "").toString().trim();
       const ceoAmount = (r[4] ?? "").toString().trim();
       const eliteAmount = (r[5] ?? "").toString().trim();
@@ -243,6 +247,8 @@ export async function syncMasterList() {
           canceled_date: section === "Cancelled" ? "cancelled" : null,
           raw: {
             row: r,
+            stripeLink,
+            stripeCustomerId,
             spfAmount,
             ceoAmount,
             eliteAmount,

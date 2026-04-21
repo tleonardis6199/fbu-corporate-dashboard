@@ -180,7 +180,11 @@ export async function loadMembersData(): Promise<MembersData> {
     const isElite = eliteByName.has(nameKey);
     const r = ps.raw ?? {};
 
-    // Collect all known emails for this person across master tabs
+    // PRIMARY match: Stripe customer ID extracted from the sheet's hyperlink column.
+    // This is a definitive ID — eliminates name/email matching ambiguity.
+    const primaryStripeId: string | null = r.stripeCustomerId ?? null;
+
+    // Collect all known emails for this person across master tabs (for enrichment + fallback)
     const emails: string[] = [];
     for (const mm of master) {
       if (mm.email?.startsWith("payment-schedule:")) continue;
@@ -190,13 +194,28 @@ export async function loadMembersData(): Promise<MembersData> {
     }
     const allEmailsSet = Array.from(new Set(emails));
 
-    // Find ALL Stripe customer records across all emails (Stripe creates dupes per email)
+    // Find Stripe customer records: start with the sheet-linked ID, then expand by email
+    // (Stripe creates dupes per email; we want subs across all of them for this person)
     const allStripeCusts: any[] = [];
-    for (const e of allEmailsSet) {
-      const matches = custsByEmail.get(e) ?? [];
-      for (const c of matches) allStripeCusts.push(c);
+    const seenIds = new Set<string>();
+    if (primaryStripeId) {
+      const c = customers.find((x) => x.id === primaryStripeId);
+      if (c) { allStripeCusts.push(c); seenIds.add(c.id); }
     }
-    // Fallback: name match (handles missing-email cases)
+    // Also include other customer records that share the linked customer's email
+    const primaryEmail = allStripeCusts[0]?.email?.toLowerCase().trim();
+    if (primaryEmail) {
+      for (const c of custsByEmail.get(primaryEmail) ?? []) {
+        if (!seenIds.has(c.id)) { allStripeCusts.push(c); seenIds.add(c.id); }
+      }
+    }
+    // Plus any customer matching a master-list email
+    for (const e of allEmailsSet) {
+      for (const c of custsByEmail.get(e) ?? []) {
+        if (!seenIds.has(c.id)) { allStripeCusts.push(c); seenIds.add(c.id); }
+      }
+    }
+    // Last-resort name fallback
     if (allStripeCusts.length === 0) {
       const byName = custByName.get(nameKey);
       if (byName) allStripeCusts.push(byName);
