@@ -56,7 +56,9 @@ const emptyCatRec = <T>(v: () => T): Record<ProgramCategory, T> => ({
 export async function loadMembersData(): Promise<MembersData> {
   const sb = createServerClient();
 
-  const [subsRes, invoicesRes] = await Promise.all([
+  const twelveMonthsAgoIsoForPIF = new Date(Date.now() - 365 * 86400000).toISOString();
+
+  const [subsRes, invoicesRes, pifChargesRes] = await Promise.all([
     sb
       .from("stripe_subscriptions")
       .select("id, customer_id, status, unit_amount, interval, created_at, canceled_at, product_name, stripe_customers(name, email, phone, address, metadata)")
@@ -66,10 +68,21 @@ export async function loadMembersData(): Promise<MembersData> {
       .select("subscription_id, amount_paid, paid_at")
       .eq("status", "paid")
       .gte("paid_at", "2017-01-01"),
+    // PIF Mastermind charges: direct charges ≥ $5k in last 365d with PIF description
+    sb
+      .from("stripe_charges")
+      .select("id, customer_id, amount, description, created_at, stripe_customers(name, email, phone, address, metadata)")
+      .eq("status", "succeeded")
+      .gte("amount", 5000)
+      .gte("created_at", twelveMonthsAgoIsoForPIF),
   ]);
 
   const subs = (subsRes.data ?? []) as any[];
   const invoices = (invoicesRes.data ?? []) as any[];
+  const pifCandidates = ((pifChargesRes.data ?? []) as any[]).filter((ch) => {
+    const d = (ch.description ?? "").toLowerCase();
+    return /\bpif\b|paid in full|mastermind/.test(d);
+  });
 
   // Build sub_id → product_name, customer_id, category lookup
   const subMeta = new Map<string, { customerId: string | null; category: ProgramCategory }>();
@@ -223,6 +236,40 @@ export async function loadMembersData(): Promise<MembersData> {
         terminatedYTD.push(rowFromSub(s, g.category, g.customer));
       }
     }
+  }
+
+  // Add PIF Mastermind members (direct charges ≥ $5k with PIF description,
+  // not tied to a subscription, within last 365 days).
+  const existingMastermindCustomers = new Set(
+    byCategory.mastermind.map((r) => r.customerId).filter(Boolean)
+  );
+  for (const ch of pifCandidates) {
+    if (!ch.customer_id || existingMastermindCustomers.has(ch.customer_id)) continue;
+    const cust = ch.stripe_customers ?? {};
+    const addr = cust.address;
+    const addrStr = addr
+      ? [addr.line1, addr.city, addr.state, addr.postal_code].filter(Boolean).join(", ")
+      : null;
+    const amount = Number(ch.amount);
+    byCategory.mastermind.push({
+      subId: ch.id,
+      customerId: ch.customer_id,
+      productName: `Mastermind PIF (${ch.description ?? "paid in full"}) — $${amount.toLocaleString()}`,
+      category: "mastermind",
+      status: "active",
+      unitAmount: Math.round(amount / 12),
+      interval: "month",
+      createdAt: ch.created_at,
+      canceledAt: null,
+      lastPaidAt: ch.created_at,
+      totalPaid: amount,
+      name: cust.name ?? null,
+      email: cust.email ?? null,
+      phone: cust.phone ?? null,
+      businessName: cust.metadata?.business_name ?? cust.metadata?.gym_name ?? null,
+      address: addrStr,
+    });
+    existingMastermindCustomers.add(ch.customer_id);
   }
 
   // Sort

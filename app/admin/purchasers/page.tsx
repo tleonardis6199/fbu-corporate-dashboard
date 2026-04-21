@@ -10,25 +10,65 @@ export default async function PurchasersPage() {
   const members = await loadMembersData();
 
   const sb = createServerClient();
-  const { data: charges } = await sb
-    .from("stripe_charges")
-    .select("customer_id, amount, created_at, stripe_customers(email, name, phone, address)")
-    .eq("status", "succeeded")
-    .gte("created_at", new Date(Date.now() - 2 * 365 * 86400000).toISOString())
-    .order("created_at", { ascending: false });
+  const cutoff = new Date(Date.now() - 2 * 365 * 86400000).toISOString();
 
-  type Row = { customer: any; charges: any[]; total: number; last: string };
+  const [chargesRes, invoicesRes, subsRes] = await Promise.all([
+    sb
+      .from("stripe_charges")
+      .select("customer_id, amount, created_at, description, invoice_id, stripe_customers(email, name, phone, address)")
+      .eq("status", "succeeded")
+      .gte("created_at", cutoff)
+      .order("created_at", { ascending: false }),
+    sb
+      .from("stripe_invoices")
+      .select("id, customer_id, subscription_id, lines")
+      .eq("status", "paid")
+      .gte("paid_at", cutoff),
+    sb
+      .from("stripe_subscriptions")
+      .select("id, product_name"),
+  ]);
+
+  // Build invoice_id → product_name lookup (first line of invoice or subscription's product)
+  const invoiceToProduct = new Map<string, string>();
+  const subToProduct = new Map<string, string>();
+  for (const s of (subsRes.data ?? []) as any[]) {
+    if (s.id && s.product_name) subToProduct.set(s.id, s.product_name);
+  }
+  for (const inv of (invoicesRes.data ?? []) as any[]) {
+    let prod: string | null = null;
+    if (inv.subscription_id) prod = subToProduct.get(inv.subscription_id) ?? null;
+    if (!prod && inv.lines?.data?.[0]?.description) {
+      // Line desc is like "1 × Product Name (at $X / month)" — strip the prefix
+      const raw = inv.lines.data[0].description as string;
+      prod = raw.replace(/^\d+\s*×\s*/, "").replace(/\s*\(at.*$/, "").trim();
+    }
+    if (prod) invoiceToProduct.set(inv.id, prod);
+  }
+
+  type Row = { customer: any; charges: any[]; total: number; last: string; products: Map<string, number> };
   const byCustomer = new Map<string, Row>();
-  for (const c of ((charges as any[]) ?? []) as any[]) {
+  for (const c of ((chargesRes.data as any[]) ?? []) as any[]) {
     if (!c.customer_id) continue;
     const cur: Row = byCustomer.get(c.customer_id) ?? {
       customer: c.stripe_customers,
       charges: [] as any[],
       total: 0,
       last: c.created_at,
+      products: new Map<string, number>(),
     };
     cur.charges.push(c);
     cur.total += Number(c.amount ?? 0);
+    // Figure out what was purchased
+    let productLabel: string | null = null;
+    if (c.invoice_id && invoiceToProduct.has(c.invoice_id)) {
+      productLabel = invoiceToProduct.get(c.invoice_id)!;
+    } else if (c.description) {
+      productLabel = c.description as string;
+    }
+    if (productLabel) {
+      cur.products.set(productLabel, (cur.products.get(productLabel) ?? 0) + 1);
+    }
     byCustomer.set(c.customer_id, cur);
   }
   const rows = Array.from(byCustomer.values()).sort((a, b) => b.total - a.total);
@@ -165,27 +205,44 @@ export default async function PurchasersPage() {
       <div>
         <SectionHeader accent="#22c55e" title="All Purchasers (L24M)" count={rows.length} subtitle="Everyone who paid in the last 24 months, sorted by total" />
         <Card className="!p-0 overflow-x-auto">
-          <div className="grid grid-cols-[1.3fr_1.5fr_1fr_1.5fr_auto_auto] gap-3 px-5 py-3 border-b border-border text-[11px] uppercase tracking-wide text-dim">
+          <div className="grid grid-cols-[1.3fr_1.5fr_1fr_2fr_auto_auto] gap-3 px-5 py-3 border-b border-border text-[11px] uppercase tracking-wide text-dim">
             <span>Name</span>
-            <span>Email</span>
+            <span>Email / Address</span>
             <span>Phone</span>
-            <span>Address</span>
+            <span>Products Purchased</span>
             <span># Charges</span>
             <span className="text-right">Total</span>
           </div>
           {rows.slice(0, 300).map((r, i) => {
             const addr = r.customer?.address;
             const addrStr = addr ? [addr.line1, addr.city, addr.state].filter(Boolean).join(", ") : "";
+            const products = Array.from(r.products.entries())
+              .sort((a, b) => b[1] - a[1]);
             return (
               <div
                 key={i}
-                className="grid grid-cols-[1.3fr_1.5fr_1fr_1.5fr_auto_auto] gap-3 px-5 py-3 items-center text-sm"
+                className="grid grid-cols-[1.3fr_1.5fr_1fr_2fr_auto_auto] gap-3 px-5 py-3 items-start text-sm"
                 style={{ borderBottom: i < rows.length - 1 ? "1px solid #1e293b" : undefined }}
               >
                 <span className="font-medium">{r.customer?.name ?? "—"}</span>
-                <a href={`mailto:${r.customer?.email}`} className="text-accent-kpi text-xs truncate">{r.customer?.email ?? "—"}</a>
+                <div className="text-xs truncate">
+                  <a href={`mailto:${r.customer?.email}`} className="text-accent-kpi block truncate">{r.customer?.email ?? "—"}</a>
+                  {addrStr && <div className="text-dim text-[11px] mt-0.5 truncate">{addrStr}</div>}
+                </div>
                 <span className="text-xs font-mono">{r.customer?.phone ?? <span className="text-dim">—</span>}</span>
-                <span className="text-xs text-muted truncate">{addrStr || <span className="text-dim italic">—</span>}</span>
+                <div className="text-xs space-y-0.5">
+                  {products.length === 0 ? (
+                    <span className="text-dim italic">—</span>
+                  ) : (
+                    products.slice(0, 5).map(([name, count]) => (
+                      <div key={name} className="text-text">
+                        {name}
+                        {count > 1 && <span className="text-dim ml-1">×{count}</span>}
+                      </div>
+                    ))
+                  )}
+                  {products.length > 5 && <div className="text-dim">+{products.length - 5} more</div>}
+                </div>
                 <span className="text-xs text-muted">{r.charges.length}</span>
                 <span className="text-right font-semibold">${r.total.toLocaleString()}</span>
               </div>
