@@ -13,17 +13,14 @@ export function MemberTable({
   if (rows.length === 0) {
     return <Card><div className="text-dim text-sm">No members.</div></Card>;
   }
-  const fmt = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
-  const monthsSince = (iso: string | null) => {
-    if (!iso) return 0;
-    return Math.round((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+  const fmt = (iso: string | null) => {
+    if (!iso) return "—";
+    // Accept both ISO and M/D/YYYY
+    if (iso.length <= 10 && iso.includes("/")) return iso;
+    return iso.slice(0, 10);
   };
 
-  const cols = showCanceledAt
-    ? "1.4fr 1.6fr 1fr 1.5fr 0.9fr 0.9fr auto"
-    : showLastPaid
-    ? "1.4fr 1.6fr 1fr 1.5fr 0.9fr 0.9fr auto"
-    : "1.4fr 1.6fr 1fr 1.5fr 0.8fr auto";
+  const cols = "1.4fr 1.5fr 1.4fr 1fr 1.5fr 0.9fr auto";
 
   return (
     <Card className="!p-0 overflow-x-auto">
@@ -32,18 +29,17 @@ export function MemberTable({
         style={{ gridTemplateColumns: cols }}
       >
         <span>Name</span>
-        <span>Email</span>
-        <span>Phone</span>
-        <span>Product</span>
+        <span>Gym / Email</span>
+        <span>Phone / Address</span>
+        <span>Tier</span>
+        <span>Product (Stripe)</span>
         <span>Joined</span>
-        {showLastPaid && <span>Last Paid</span>}
-        {showCanceledAt && <span>Canceled</span>}
         <span className="text-right">{showLastPaid ? "LTV" : "MRR"}</span>
       </div>
       {rows.map((r, i) => (
         <div
-          key={`${r.subId}-${i}`}
-          className="grid gap-3 px-5 py-3 items-center text-sm"
+          key={`${r.id}-${i}`}
+          className="grid gap-3 px-5 py-3 items-start text-sm"
           style={{
             gridTemplateColumns: cols,
             borderBottom: i < rows.length - 1 ? "1px solid #1e293b" : undefined,
@@ -51,31 +47,50 @@ export function MemberTable({
         >
           <div>
             <div className="font-medium">{r.name ?? "—"}</div>
-            {r.businessName && <div className="text-dim text-[11px]">{r.businessName}</div>}
+            {r.staff && <div className="text-dim text-[11px] mt-0.5 truncate" title={r.staff}>Staff: {r.staff}</div>}
           </div>
-          <a href={`mailto:${r.email}`} className="text-accent-kpi text-xs truncate">{r.email ?? "—"}</a>
-          <span className="text-xs font-mono">
-            {r.phone ? <a href={`tel:${r.phone}`} className="text-text">{r.phone}</a> : <span className="text-dim">—</span>}
-          </span>
-          <span className="text-xs text-muted truncate" title={r.productName ?? ""}>{r.productName ?? "—"}</span>
-          <span className="text-xs text-muted">
-            {fmt(r.createdAt)}
-          </span>
-          {showLastPaid && (
-            <span className="text-xs text-muted">
-              {fmt(r.lastPaidAt)}
-              {r.lastPaidAt && <span className="text-dim ml-1">({monthsSince(r.lastPaidAt)}mo)</span>}
+          <div className="text-xs">
+            {r.gymName && <div className="text-text font-medium">{r.gymName}</div>}
+            {r.allEmails.map((e) => (
+              <a key={e} href={`mailto:${e}`} className="text-accent-kpi block truncate">{e}</a>
+            ))}
+          </div>
+          <div className="text-xs">
+            <div className="font-mono">
+              {r.phone ? <a href={`tel:${r.phone}`} className="text-text">{r.phone}</a> : <span className="text-dim">—</span>}
+            </div>
+            {r.address && <div className="text-dim text-[11px] mt-0.5 truncate" title={r.address}>{r.address}</div>}
+          </div>
+          <div className="text-xs">
+            <span
+              className="font-bold"
+              style={{
+                color: r.category === "mastermind" ? "#a855f7"
+                  : r.category === "elite" ? "#f59e0b"
+                  : r.category === "ceo" ? "#ec4899"
+                  : r.category === "nca" ? "#eab308"
+                  : "#94a3b8",
+              }}
+            >
+              {r.tier ?? "—"}
             </span>
-          )}
-          {showCanceledAt && (
-            <span className="text-xs" style={{ color: "#ef4444" }}>
-              {fmt(r.canceledAt)}
-            </span>
-          )}
+          </div>
+          <div className="text-xs text-muted">
+            {r.activeProducts.length > 0 ? (
+              r.activeProducts.map((p) => <div key={p}>{p}</div>)
+            ) : r.stripeCustomerId ? (
+              <span className="text-dim italic">No active sub</span>
+            ) : (
+              <span className="text-dim italic">Not in Stripe</span>
+            )}
+          </div>
+          <span className="text-xs text-muted">{fmt(r.dateJoined)}</span>
           <span className="text-right font-semibold">
             {showLastPaid
               ? `$${Math.round(r.totalPaid).toLocaleString()}`
-              : `$${r.unitAmount.toLocaleString()}${r.interval === "week" ? "/wk" : "/mo"}`}
+              : r.currentMrr > 0
+              ? `$${r.currentMrr.toLocaleString()}/mo`
+              : <span className="text-dim">—</span>}
           </span>
         </div>
       ))}

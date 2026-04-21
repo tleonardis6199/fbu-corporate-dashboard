@@ -1,7 +1,7 @@
 import { Card, KPI, SectionHeader } from "@/components/Card";
 import { createServerClient } from "@/lib/supabase";
 import { loadMembersData } from "@/lib/members";
-import { PROGRAM_COLOR, PROGRAM_LABEL, ProgramCategory } from "@/lib/programs";
+import { PROGRAM_COLOR, PROGRAM_LABEL, ProgramKey } from "@/lib/programs";
 import { MemberTable } from "./MemberTable";
 
 export const dynamic = "force-dynamic";
@@ -76,12 +76,11 @@ export default async function PurchasersPage() {
   const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
   const pct = (n: number) => `${n.toFixed(1)}%`;
 
-  const programs: { cat: ProgramCategory; emoji: string }[] = [
+  const programs: { cat: ProgramKey; emoji: string }[] = [
     { cat: "mastermind", emoji: "💼" },
     { cat: "elite", emoji: "⭐" },
     { cat: "ceo", emoji: "👑" },
     { cat: "nca", emoji: "🎓" },
-    { cat: "branding", emoji: "🎨" },
   ];
 
   return (
@@ -198,6 +197,29 @@ export default async function PurchasersPage() {
             📋 All Terminations YTD ({members.terminatedYTD.length})
           </summary>
           <MemberTable rows={members.terminatedYTD} showCanceledAt />
+        </details>
+      )}
+
+      {/* Active in Stripe but not in master list — review candidates */}
+      {members.unmatchedStripeActive.length > 0 && (
+        <details className="bg-card border border-dashed border-border rounded-xl">
+          <summary className="px-5 py-3 cursor-pointer text-muted hover:text-text text-sm">
+            🔍 Active in Stripe but not in Master List ({members.unmatchedStripeActive.length}) — may need categorization
+          </summary>
+          <div className="border-t border-border">
+            {members.unmatchedStripeActive.map((u, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-[1.5fr_1.5fr_1.5fr_auto] gap-3 px-5 py-2 text-sm"
+                style={{ borderBottom: i < members.unmatchedStripeActive.length - 1 ? "1px solid #1e293b" : undefined }}
+              >
+                <span>{u.name ?? "—"}</span>
+                <a href={`mailto:${u.email}`} className="text-accent-kpi text-xs truncate">{u.email ?? "—"}</a>
+                <span className="text-xs text-muted truncate">{u.product ?? "—"}</span>
+                <span className="text-right">${u.mrr.toLocaleString()}/mo</span>
+              </div>
+            ))}
+          </div>
         </details>
       )}
 
