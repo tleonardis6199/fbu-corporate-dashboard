@@ -83,16 +83,18 @@ export async function syncSheets() {
   }
 
   // ---- DATA - BOOKED CALLS ----
-  // Headers seen: date, first, last, email, call_type, booked_status
+  // Columns: A=Booking Created, B=First, C=Last, D=Email, E=Phone,
+  //          F=Appointment Date, G=Calendar, H=Attribution, I=Funnel,
+  //          J=Appointment Owner, K=Contact Created
   {
     const rows = await fetchTab("DATA - BOOKED CALLS", apiKey);
     const [header, ...body] = rows;
     let count = 0;
-    const seen = new Set<string>(); // dedupe within this run
+    const seen = new Set<string>();
     for (const r of body) {
-      const date = parseDate(r[0]);
+      const date = parseDate(r[5]) ?? parseDate(r[0]); // prefer appointment date
       const email = String(r[3] ?? "").toLowerCase().trim();
-      const callType = String(r[4] ?? "").trim() || null;
+      const callType = String(r[6] ?? "").trim() || null; // Calendar
       if (!date || !email) continue;
       const key = `${date}|${email}|${callType ?? ""}`;
       if (seen.has(key)) continue;
@@ -103,7 +105,7 @@ export async function syncSheets() {
           name: `${r[1] ?? ""} ${r[2] ?? ""}`.trim() || null,
           email,
           call_type: callType,
-          booked_status: String(r[5] ?? "").trim() || null,
+          booked_status: String(r[7] ?? "").trim() || null, // Attribution
           raw: r as any,
           synced_at: now,
         },
@@ -115,16 +117,18 @@ export async function syncSheets() {
   }
 
   // ---- DATA - CALL STATUS ----
-  // Headers: date, first, last, email, call_type, status, outcome
+  // Columns: A=Status Updated, B=First, C=Last, D=Email, E=Phone,
+  //          F=Appointment Date, G=Calendar, H=First Touch, I=Last Touch,
+  //          J=UTM, K=STATUS
   {
     const rows = await fetchTab("DATA - CALL STATUS", apiKey);
     const [header, ...body] = rows;
     let count = 0;
     const seen = new Set<string>();
     for (const r of body) {
-      const date = parseDate(r[0]);
+      const date = parseDate(r[5]) ?? parseDate(r[0]); // use appointment date
       const email = String(r[3] ?? "").toLowerCase().trim();
-      const callType = String(r[4] ?? "").trim() || null;
+      const callType = String(r[6] ?? "").trim() || null; // Calendar
       if (!date || !email) continue;
       const key = `${date}|${email}|${callType ?? ""}`;
       if (seen.has(key)) continue;
@@ -135,8 +139,8 @@ export async function syncSheets() {
           name: `${r[1] ?? ""} ${r[2] ?? ""}`.trim() || null,
           email,
           call_type: callType,
-          status: String(r[5] ?? "").trim() || null,
-          outcome: String(r[6] ?? "").trim() || null,
+          status: String(r[10] ?? "").trim() || null, // STATUS column K
+          outcome: String(r[9] ?? "").trim() || null, // UTM column J
           raw: r as any,
           synced_at: now,
         },
