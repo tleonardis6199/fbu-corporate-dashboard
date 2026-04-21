@@ -195,8 +195,13 @@ export async function loadMembersData(): Promise<MembersData> {
       row.totalPaid = agg.total;
     }
 
+    // CEO uses "billed in last 12 months" because it bills irregularly.
+    // All other programs use strict Stripe status='active' (monthly recurring).
     const billedRecently = row.lastPaidAt && row.lastPaidAt >= twelveMonthsAgoIso;
-    const isActive = g.hasActiveSub || billedRecently;
+    const isActive =
+      g.category === "ceo"
+        ? (g.hasActiveSub || billedRecently)
+        : g.hasActiveSub;
 
     if (isActive) {
       byCategory[g.category].push(row);
