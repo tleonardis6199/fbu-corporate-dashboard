@@ -1,26 +1,35 @@
 import { NextResponse } from "next/server";
 
-// Vercel Cron trigger endpoint. Protected by SYNC_SECRET query param.
-// Calls the sync script via child_process (works on Vercel Node runtime).
-// For large syncs, this can exceed Vercel function timeout — in that case
-// prefer running the sync locally with `npm run sync` weekly.
+// Daily cron trigger at midnight ET (4am UTC during EDT).
+// Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" automatically.
+// Also accepts ?token=<SYNC_SECRET> for manual browser trigger.
 
 export const runtime = "nodejs";
-export const maxDuration = 300; // 5 min (Pro plan)
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const token = url.searchParams.get("token");
-  if (token !== process.env.SYNC_SECRET) {
+  const queryToken = url.searchParams.get("token");
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  const cronSecret = process.env.CRON_SECRET;
+  const syncSecret = process.env.SYNC_SECRET;
+
+  // Allow either: manual via ?token= OR Vercel Cron via Bearer
+  const ok =
+    (queryToken && syncSecret && queryToken === syncSecret) ||
+    (bearerToken && cronSecret && bearerToken === cronSecret);
+
+  if (!ok) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  // Dynamic import so the bundler doesn't try to include Stripe SDK in edge
   try {
     const { syncAll } = await import("@/scripts/syncLib");
-    await syncAll();
-    return NextResponse.json({ ok: true, ts: new Date().toISOString() });
+    const result = await syncAll();
+    return NextResponse.json({ ts: new Date().toISOString(), ...result });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: e.message, stack: e.stack }, { status: 500 });
   }
 }
