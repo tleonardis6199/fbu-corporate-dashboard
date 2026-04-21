@@ -61,6 +61,18 @@ export async function loadMembersData(): Promise<MembersData> {
   const subs = (subsRes.data ?? []) as any[];
   const invoices = (invoicesRes.data ?? []) as any[];
 
+  // For CEO Mastermind: "active" = billed for CEO product in last 12 months
+  // (not Stripe status='active' — CEO bills irregularly / annually)
+  const twelveMonthsAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+  const ceoSubIds = new Set<string>(
+    subs.filter((s: any) => categorizeProduct(s.product_name) === "ceo").map((s: any) => s.id)
+  );
+  const ceoRecentlyBilledSubIds = new Set<string>(
+    invoices
+      .filter((inv: any) => inv.paid_at && inv.paid_at >= twelveMonthsAgo && ceoSubIds.has(inv.subscription_id))
+      .map((inv: any) => inv.subscription_id)
+  );
+
   // Sum invoice amounts per subscription
   const invByCustomer: Map<string, number> = new Map();
   const subToCustomer: Map<string, string> = new Map();
@@ -108,7 +120,12 @@ export async function loadMembersData(): Promise<MembersData> {
       address: addrStr,
     };
 
-    if (s.status === "active") {
+    // CEO uses "billed in last 12 months" rule; all others use Stripe status
+    const isActive =
+      cat === "ceo"
+        ? ceoRecentlyBilledSubIds.has(s.id)
+        : s.status === "active";
+    if (isActive) {
       byCategory[cat].push(row);
     }
     if (s.status === "paused") {
@@ -133,6 +150,19 @@ export async function loadMembersData(): Promise<MembersData> {
         });
       }
     }
+  }
+
+  // Dedupe CEO by customer (multi-year billing could produce duplicates)
+  if (byCategory.ceo.length > 1) {
+    const seen = new Map<string, MemberRow>();
+    for (const r of byCategory.ceo) {
+      const key = r.customerId ?? r.email ?? r.subId;
+      const existing = seen.get(key);
+      if (!existing || new Date(r.createdAt) > new Date(existing.createdAt)) {
+        seen.set(key, r);
+      }
+    }
+    byCategory.ceo = Array.from(seen.values());
   }
 
   // Sort each active list by MRR desc
