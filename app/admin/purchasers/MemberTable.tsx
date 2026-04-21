@@ -1,31 +1,53 @@
 import { Card } from "@/components/Card";
 import type { MemberRow } from "@/lib/members";
 
-export function MemberTable({ rows }: { rows: MemberRow[] }) {
+export function MemberTable({
+  rows,
+  showLastPaid = false,
+  showCanceledAt = false,
+}: {
+  rows: MemberRow[];
+  showLastPaid?: boolean;
+  showCanceledAt?: boolean;
+}) {
   if (rows.length === 0) {
     return <Card><div className="text-dim text-sm">No members.</div></Card>;
   }
-  const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
-  const monthsActive = (createdAt: string) => {
-    const months = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-    return Math.round(months);
+  const fmt = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
+  const monthsSince = (iso: string | null) => {
+    if (!iso) return 0;
+    return Math.round((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24 * 30.44));
   };
+
+  const cols = showCanceledAt
+    ? "1.4fr 1.6fr 1fr 1.5fr 0.9fr 0.9fr auto"
+    : showLastPaid
+    ? "1.4fr 1.6fr 1fr 1.5fr 0.9fr 0.9fr auto"
+    : "1.4fr 1.6fr 1fr 1.5fr 0.8fr auto";
 
   return (
     <Card className="!p-0 overflow-x-auto">
-      <div className="grid grid-cols-[1.4fr_1.6fr_1fr_1.5fr_0.8fr_auto] gap-3 px-5 py-3 border-b border-border text-[11px] uppercase tracking-wide text-dim">
+      <div
+        className="grid gap-3 px-5 py-3 border-b border-border text-[11px] uppercase tracking-wide text-dim"
+        style={{ gridTemplateColumns: cols }}
+      >
         <span>Name</span>
         <span>Email</span>
         <span>Phone</span>
         <span>Product</span>
         <span>Joined</span>
-        <span className="text-right">MRR</span>
+        {showLastPaid && <span>Last Paid</span>}
+        {showCanceledAt && <span>Canceled</span>}
+        <span className="text-right">{showLastPaid ? "LTV" : "MRR"}</span>
       </div>
       {rows.map((r, i) => (
         <div
-          key={r.subId}
-          className="grid grid-cols-[1.4fr_1.6fr_1fr_1.5fr_0.8fr_auto] gap-3 px-5 py-3 items-center text-sm"
-          style={{ borderBottom: i < rows.length - 1 ? "1px solid #1e293b" : undefined }}
+          key={`${r.subId}-${i}`}
+          className="grid gap-3 px-5 py-3 items-center text-sm"
+          style={{
+            gridTemplateColumns: cols,
+            borderBottom: i < rows.length - 1 ? "1px solid #1e293b" : undefined,
+          }}
         >
           <div>
             <div className="font-medium">{r.name ?? "—"}</div>
@@ -37,12 +59,23 @@ export function MemberTable({ rows }: { rows: MemberRow[] }) {
           </span>
           <span className="text-xs text-muted truncate" title={r.productName ?? ""}>{r.productName ?? "—"}</span>
           <span className="text-xs text-muted">
-            {fmtDate(r.createdAt)}
-            <span className="text-dim ml-2">({monthsActive(r.createdAt)}mo)</span>
+            {fmt(r.createdAt)}
           </span>
+          {showLastPaid && (
+            <span className="text-xs text-muted">
+              {fmt(r.lastPaidAt)}
+              {r.lastPaidAt && <span className="text-dim ml-1">({monthsSince(r.lastPaidAt)}mo)</span>}
+            </span>
+          )}
+          {showCanceledAt && (
+            <span className="text-xs" style={{ color: "#ef4444" }}>
+              {fmt(r.canceledAt)}
+            </span>
+          )}
           <span className="text-right font-semibold">
-            ${r.unitAmount.toLocaleString()}
-            <span className="text-dim text-xs">/{r.interval === "week" ? "wk" : "mo"}</span>
+            {showLastPaid
+              ? `$${Math.round(r.totalPaid).toLocaleString()}`
+              : `$${r.unitAmount.toLocaleString()}${r.interval === "week" ? "/wk" : "/mo"}`}
           </span>
         </div>
       ))}

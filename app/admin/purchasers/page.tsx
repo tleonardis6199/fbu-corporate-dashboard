@@ -104,16 +104,29 @@ export default async function PurchasersPage() {
       {/* Active member lists per program */}
       {programs.map(({ cat, emoji }) => {
         const rows = members.byCategory[cat];
-        if (rows.length === 0) return null;
+        const alumni = members.alumniByCategory[cat];
+        if (rows.length === 0 && alumni.length === 0) return null;
         return (
-          <div key={cat}>
-            <SectionHeader
-              accent={PROGRAM_COLOR[cat]}
-              title={`${emoji} Active ${PROGRAM_LABEL[cat]}`}
-              count={rows.length}
-              subtitle={`$${Math.round(members.stats[cat].mrr).toLocaleString()}/mo MRR · avg LTV ${money(members.stats[cat].avgLTV)} · avg stay ${Math.round(members.stats[cat].avgStayMonths)}mo`}
-            />
-            <MemberTable rows={rows} />
+          <div key={cat} className="space-y-4">
+            {rows.length > 0 && (
+              <div>
+                <SectionHeader
+                  accent={PROGRAM_COLOR[cat]}
+                  title={`${emoji} Active ${PROGRAM_LABEL[cat]}`}
+                  count={rows.length}
+                  subtitle={`$${Math.round(members.stats[cat].mrr).toLocaleString()}/mo MRR · avg LTV ${money(members.stats[cat].avgLTV)} · avg stay ${Math.round(members.stats[cat].avgStayMonths)}mo · ${members.stats[cat].cohortSize} all-time`}
+                />
+                <MemberTable rows={rows} />
+              </div>
+            )}
+            {alumni.length > 0 && (
+              <details className="bg-card border border-border rounded-xl">
+                <summary className="px-5 py-3 cursor-pointer text-muted hover:text-text text-sm">
+                  📦 {PROGRAM_LABEL[cat]} Alumni ({alumni.length}) — last payment &gt;12 months ago
+                </summary>
+                <MemberTable rows={alumni} showLastPaid />
+              </details>
+            )}
           </div>
         );
       })}
@@ -124,6 +137,28 @@ export default async function PurchasersPage() {
           <SectionHeader accent="#94a3b8" title="⏸ On Hold (Paused)" count={members.onHold.length} />
           <MemberTable rows={members.onHold} />
         </div>
+      )}
+
+      {/* Terminations */}
+      {members.terminatedMTD.length > 0 && (
+        <div>
+          <SectionHeader
+            accent="#ef4444"
+            title="❌ Terminated MTD"
+            count={members.terminatedMTD.length}
+            subtitle="Subscriptions canceled this month"
+          />
+          <MemberTable rows={members.terminatedMTD} showCanceledAt />
+        </div>
+      )}
+
+      {members.terminatedYTD.length > members.terminatedMTD.length && (
+        <details className="bg-card border border-border rounded-xl">
+          <summary className="px-5 py-3 cursor-pointer text-muted hover:text-text text-sm">
+            📋 All Terminations YTD ({members.terminatedYTD.length})
+          </summary>
+          <MemberTable rows={members.terminatedYTD} showCanceledAt />
+        </details>
       )}
 
       {/* Past purchasers list (all 2y buyers) */}
