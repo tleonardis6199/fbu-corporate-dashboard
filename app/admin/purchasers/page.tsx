@@ -142,7 +142,7 @@ export default async function PurchasersPage() {
 
       {/* Active member lists per program */}
       {programs.map(({ cat, emoji }) => {
-        const rows = members.byCategory[cat];
+        const rows = members.activeByCategory[cat];
         const alumni = members.alumniByCategory[cat];
         if (rows.length === 0 && alumni.length === 0) return null;
         return (
@@ -200,27 +200,54 @@ export default async function PurchasersPage() {
         </details>
       )}
 
-      {/* Active in Stripe but not in master list — review candidates */}
-      {members.unmatchedStripeActive.length > 0 && (
-        <details className="bg-card border border-dashed border-border rounded-xl">
-          <summary className="px-5 py-3 cursor-pointer text-muted hover:text-text text-sm">
-            🔍 Active in Stripe but not in Master List ({members.unmatchedStripeActive.length}) — may need categorization
-          </summary>
-          <div className="border-t border-border">
-            {members.unmatchedStripeActive.map((u, i) => (
+      {/* Needs billing attention — active in sheet, billing broken in Stripe */}
+      {members.needsBillingAttention.length > 0 && (
+        <div>
+          <SectionHeader
+            accent="#ef4444"
+            title="🔴 Needs Billing Attention"
+            count={members.needsBillingAttention.length}
+            subtitle="Active in the sheet, but Stripe billing looks broken or off-platform"
+          />
+          <Card className="!p-0">
+            <div className="grid grid-cols-[1.3fr_1.5fr_1fr_1fr_2fr_auto] gap-3 px-5 py-3 border-b border-border text-[11px] uppercase tracking-wide text-dim">
+              <span>Name</span>
+              <span>Email</span>
+              <span>Phone</span>
+              <span>Gym</span>
+              <span>Issue</span>
+              <span className="text-right">Sheet Amt</span>
+            </div>
+            {members.needsBillingAttention.map((r, i, arr) => (
               <div
-                key={i}
-                className="grid grid-cols-[1.5fr_1.5fr_1.5fr_auto] gap-3 px-5 py-2 text-sm"
-                style={{ borderBottom: i < members.unmatchedStripeActive.length - 1 ? "1px solid #1e293b" : undefined }}
+                key={r.id}
+                className="grid grid-cols-[1.3fr_1.5fr_1fr_1fr_2fr_auto] gap-3 px-5 py-3 items-center text-sm"
+                style={{
+                  borderBottom: i < arr.length - 1 ? "1px solid #1e293b" : undefined,
+                  borderLeft: "4px solid #ef4444",
+                  background: "#ef444411",
+                }}
               >
-                <span>{u.name ?? "—"}</span>
-                <a href={`mailto:${u.email}`} className="text-accent-kpi text-xs truncate">{u.email ?? "—"}</a>
-                <span className="text-xs text-muted truncate">{u.product ?? "—"}</span>
-                <span className="text-right">${u.mrr.toLocaleString()}/mo</span>
+                <span className="font-medium">{r.name ?? "—"}</span>
+                <div className="text-xs">
+                  {r.allEmails.length > 0 ? (
+                    r.allEmails.map((e) => (
+                      <a key={e} href={`mailto:${e}`} className="text-accent-kpi block truncate">{e}</a>
+                    ))
+                  ) : <span className="text-dim">—</span>}
+                </div>
+                <span className="text-xs font-mono">
+                  {r.phone ? <a href={`tel:${r.phone}`} className="text-text">{r.phone}</a> : <span className="text-dim">—</span>}
+                </span>
+                <span className="text-xs text-muted truncate">{r.gymName ?? "—"}</span>
+                <span className="text-xs" style={{ color: "#fca5a5" }}>{r.attentionReason}</span>
+                <span className="text-right font-semibold text-xs">
+                  ${r.monthlyTotal.toLocaleString()}/mo
+                </span>
               </div>
             ))}
-          </div>
-        </details>
+          </Card>
+        </div>
       )}
 
       {/* Past purchasers list (all 2y buyers) */}

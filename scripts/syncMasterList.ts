@@ -200,6 +200,66 @@ export async function syncMasterList() {
     console.warn(`NCA skipped: ${e.message}`);
   }
 
+  // 5. SPF Payment Schedules — the authoritative "who is paying and in what status" source
+  {
+    const rows = await fetchTab("SPF Payment Schedules");
+    let section: string = "active";
+    let n = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i] ?? [];
+      const name = (r[0] ?? "").trim();
+      const al = name.toLowerCase();
+      // Section markers
+      if (al.includes("comped member")) { section = "Comped"; continue; }
+      if (al.includes("offsites only")) { section = "Offsite"; continue; }
+      if (al.includes("members on hold")) { section = "Hold"; continue; }
+      if (al.includes("non-paying") || al.includes("nonpaying")) { section = "NonPaying"; continue; }
+      if (al.includes("cancelled member") || al.includes("canceled member")) { section = "Cancelled"; continue; }
+      if (!name || al.startsWith("total")) continue;
+
+      const spfAmount = (r[3] ?? "").toString().trim();
+      const ceoAmount = (r[4] ?? "").toString().trim();
+      const eliteAmount = (r[5] ?? "").toString().trim();
+      const monthlyAvg = (r[6] ?? "").toString().trim();
+      const notes = (r[8] ?? "").toString().trim();
+
+      // Derive a tier summary: Mastermind + CEO (if any) + Elite (if any)
+      const tiers: string[] = ["Mastermind"];
+      if (ceoAmount) tiers.push("CEO");
+      if (eliteAmount) tiers.push("Elite");
+      const tierStr = tiers.join(" + ");
+
+      // Use name as the synthetic key (no email in this tab)
+      await sb.from("master_members").upsert(
+        {
+          email: `payment-schedule:${name.toLowerCase().replace(/\s+/g, "-")}`, // synthetic key
+          name,
+          gym_name: null,
+          tier: tierStr,
+          date_joined: null,
+          staff: null,
+          address: null,
+          source_tab: `Payment Schedules · ${section}`,
+          canceled_date: section === "Cancelled" ? "cancelled" : null,
+          raw: {
+            row: r,
+            spfAmount,
+            ceoAmount,
+            eliteAmount,
+            monthlyAvg,
+            notes,
+            section,
+          } as any,
+          synced_at: now,
+        },
+        { onConflict: "email,source_tab" }
+      );
+      n++;
+    }
+    console.log(`✓ SPF Payment Schedules: ${n} rows`);
+    totalInserted += n;
+  }
+
   console.log(`\nTotal: ${totalInserted} member records across all tabs`);
   return { totalInserted };
 }
