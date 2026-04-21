@@ -50,12 +50,12 @@ export async function loadMembersData(): Promise<MembersData> {
     sb
       .from("stripe_subscriptions")
       .select("id, customer_id, status, unit_amount, interval, created_at, canceled_at, product_name, stripe_customers(name, email, phone, address, metadata)")
-      .gte("created_at", "2020-01-01"),
+      .gte("created_at", "2017-01-01"),
     sb
       .from("stripe_invoices")
       .select("subscription_id, amount_paid, paid_at")
       .eq("status", "paid")
-      .gte("paid_at", "2020-01-01"),
+      .gte("paid_at", "2017-01-01"),
   ]);
 
   const subs = (subsRes.data ?? []) as any[];

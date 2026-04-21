@@ -149,7 +149,8 @@ async function syncStripeSubscriptions() {
 
 async function syncStripeInvoices() {
   const start = new Date();
-  const cutoff = Math.floor((Date.now() - 6 * 365 * 86400000) / 1000);
+  // Since 2017-01-01 (Unix epoch)
+  const cutoff = Math.floor(new Date("2017-01-01").getTime() / 1000);
   let count = 0;
   for await (const inv of stripe.invoices.list({ limit: 100, created: { gte: cutoff }, status: "paid" })) {
     await sb.from("stripe_invoices").upsert({
@@ -173,7 +174,8 @@ async function syncStripeInvoices() {
 
 async function syncStripeCharges() {
   const start = new Date();
-  const cutoff = Math.floor((Date.now() - 2 * 365 * 86400000) / 1000);
+  // Since 2017-01-01 for full historical LTV attribution
+  const cutoff = Math.floor(new Date("2017-01-01").getTime() / 1000);
   let count = 0;
   for await (const ch of stripe.charges.list({ limit: 100, created: { gte: cutoff } })) {
     if (ch.status !== "succeeded") continue;
