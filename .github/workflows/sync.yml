@@ -1,0 +1,57 @@
+name: Nightly data sync
+
+# Pulls Google Sheets (source of truth) + Stripe + GHL into Supabase.
+# Runs on GitHub Actions instead of a Vercel cron because the full sync
+# takes ~40 min and Vercel functions hard-cap at 5 min. GH Actions has no
+# such cap (timeout-minutes below is the only limit).
+#
+# Triggers:
+#   - schedule: 04:00 UTC daily (= midnight ET during EDT)
+#   - workflow_dispatch: the manual "Run workflow" button in the Actions tab
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+# Never let two syncs overlap (a slow run + the next nightly tick).
+concurrency:
+  group: data-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      GHL_PRIVATE_TOKEN: ${{ secrets.GHL_PRIVATE_TOKEN }}
+      GHL_LOCATION_ID: ${{ secrets.GHL_LOCATION_ID }}
+      GOOGLE_SHEETS_API_KEY: ${{ secrets.GOOGLE_SHEETS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Sheets + master list feed member tiers/status. A Sheets hiccup must
+      # not block the Stripe/GHL money sync, so these are allowed to fail soft.
+      - name: Sync Google Sheets
+        run: npm run sync:sheets
+        continue-on-error: true
+
+      - name: Sync master member list
+        run: npm run sync:master
+        continue-on-error: true
+
+      # The main event: Stripe + GHL → Supabase. This step's success
+      # determines the job result.
+      - name: Sync Stripe + GHL
+        run: npm run sync

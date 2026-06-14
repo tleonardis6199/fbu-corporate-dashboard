@@ -1,8 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/sync",
-      "schedule": "0 4 * * *"
-    }
-  ]
+  "$comment": "Nightly sync moved to GitHub Actions (.github/workflows/sync.yml) because the full sync runs ~40 min and Vercel functions cap at 5 min. The /api/sync route stays available for manual ?token= triggers.",
+  "crons": []
 }
